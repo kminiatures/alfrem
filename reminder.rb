@@ -14,6 +14,8 @@ class Reminder
 
   end
 
+  KANJI_NUMBER = '一二三四五六七八九十'
+
   def days_of_week
     %w{日 月 火 水 木 金 土}
   end
@@ -36,16 +38,8 @@ class Reminder
   end
 
   def match?(regex)
-    if @input =~ regex
+    if @str =~ regex
       yield $~.to_a
-    else
-      nil
-    end
-  end
-
-  def _match?(regex)
-    if @input =~ regex
-      $~.to_a
     else
       nil
     end
@@ -94,47 +88,82 @@ class Reminder
   end
 
   def set_day
-    units = '(分|時間|日|週間?|ヶ?月)'
-
-    [
-      /([0-9]{1,2})#{units}後/,
-      /あと([0-9]{1,2})#{units}/,
-    ].each do |regex|
-      match?(regex)do |x|
-        str, num, unit = x
-        add_unit_time num, unit
-        remove_time_word str
-        return 
-      end
-    end
-
     num2 = '([0-9]{1,2})'
+
+    match?(/再来月/){|x| 
+      remove_time_word x[0]
+      @time = (@time + 2.month)
+    }
+
+    match?(/来月/){|x| 
+      remove_time_word x[0]
+      @time = (@time + 1.month)
+    }
+
     match?(%r{(([0-9]{2,4})[年/-])?#{num2}[月/-]#{num2}日?})do |x|
       all, y_with_suffix, y, m, d = x
       remove_time_word all
       y = @now.year unless y
-      @time = @now.change(year: y.to_i, month: m.to_i, day: d.to_i)
+      @time = @time.change(year: y.to_i, month: m.to_i, day: d.to_i)
       @time += 1.year if @time < @now
       return 
     end
 
-    match?(%r{(次の)?(#{days_of_week.join("|")})曜}) do |r|
-      remove, dummy, dow_str = r
+    match?(/月末/){|x| 
+      remove_time_word x[0]
+      @time = @time.change(day: @now.end_of_month.day)
+      return 
+    }
+
+    match?(/月初|[1一]日/){|x| 
+      remove_time_word x[0]
+      @time = (@time + 1.month).change(day: 1)
+      return 
+    }
+
+    match?(%r{(次の)?(#{days_of_week.join("|")})曜}) do |x|
+      remove, dummy, dow_str = x
       remove_time_word remove
       @time += next_dow_days(dow_str).day
       return 
     end 
 
-    
-    match?(/#{(today + tomorrow + dat).join('|')}/) do |r|
-      case r.first
+    match?(/#{(today + tomorrow + dat).join('|')}/) do |x|
+      case x.first
       when *today;    add = 0
       when *tomorrow; add = 1
       when *dat;      add = 2
       end
-      remove_time_word r.first
+      remove_time_word x.first
       @time += add.day
       return 
+    end
+
+
+    # N 日後
+    units = '(分|時間|日|週間?|ヶ?月)'
+    [
+      /([0-9#{KANJI_NUMBER}]{1,2})#{units}後/,
+      /あと([0-9]{1,2})#{units}/,
+    ].each do |regex|
+      match?(regex)do |x|
+        str, num, unit = x
+        add_unit_time kanji_to_number(num), unit
+        remove_time_word str
+      end
+    end
+
+    match?(%r{#{num2}日}){|x|
+      remove_time_word x.first
+      @time = @time.change(day: x[1])
+    }
+  end
+
+  def kanji_to_number(kanji)
+    if i = KANJI_NUMBER.chars.index(kanji) 
+      i + 1
+    else
+      kanji
     end
   end
 
