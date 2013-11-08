@@ -19,15 +19,15 @@ class Reminder
   end
 
   def today
-    '今日'
+    ['今日']
   end
 
   def tomorrow
-    '明日'
+    ['明日', 'あした']
   end
 
   def dat
-    '明後日' # day after tomorrow
+    ['明後日', 'あさって'] # day after tomorrow
   end
   alias :day_after_tomorrow :dat 
 
@@ -62,7 +62,7 @@ class Reminder
   end
 
   def remove_time_word(key)
-    @str.sub!(%r{#{key}[のに]?}, '')
+    @str.sub!(%r{#{key}[のにで]?}, '')
     @str.sub!(%r{^[ 　]|[ 　]$}, '')
   end
 
@@ -82,18 +82,30 @@ class Reminder
     match?(/#{num+space}分/){|x|      set_time_result x[0], @time.hour, x[1]}
   end
 
+  def add_unit_time(num, unit)
+    num = num.to_i
+    case unit
+    when '分';         @time += num.minute
+    when '時間';       @time += num.hour
+    when '日';         @time += num.day
+    when '週間', '週'; @time += num.week
+    when 'ヶ月', '月'; @time += num.month 
+    end
+  end
+
   def set_day
-    match?(/([0-9]{1,2})(時間|日|週間?|ヶ?月)後/)do |x|
-      str, num, unit = x
-      num = num.to_i
-      case unit
-      when '時間';       @time += num.hour
-      when '日';         @time += num.day
-      when '週間', '週'; @time += num.week
-      when 'ヶ月', '月'; @time += num.month 
+    units = '(分|時間|日|週間?|ヶ?月)'
+
+    [
+      /([0-9]{1,2})#{units}後/,
+      /あと([0-9]{1,2})#{units}/,
+    ].each do |regex|
+      match?(regex)do |x|
+        str, num, unit = x
+        add_unit_time num, unit
+        remove_time_word str
+        return 
       end
-      remove_time_word str
-      return 
     end
 
     num2 = '([0-9]{1,2})'
@@ -106,18 +118,19 @@ class Reminder
       return 
     end
 
-    match?(%r{(#{days_of_week.join("|")})曜}) do |r|
-      remove, dow_str = r
+    match?(%r{(次の)?(#{days_of_week.join("|")})曜}) do |r|
+      remove, dummy, dow_str = r
       remove_time_word remove
       @time += next_dow_days(dow_str).day
       return 
     end 
 
-    match?(/今日|明日|明後日/) do |r|
+    
+    match?(/#{(today + tomorrow + dat).join('|')}/) do |r|
       case r.first
-      when today;    add = 0
-      when tomorrow; add = 1
-      when dat;      add = 2
+      when *today;    add = 0
+      when *tomorrow; add = 1
+      when *dat;      add = 2
       end
       remove_time_word r.first
       @time += add.day
